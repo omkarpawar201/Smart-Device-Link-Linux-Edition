@@ -1,0 +1,81 @@
+{
+  "name": "diy-phone-link",
+  "version": "1.0.0",
+  "description": "Smart Device Link - An Intelligent Phone-to-PC Integration Platform",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev:vite": "vite",
+    "dev:electron": "wait-on http://localhost:5173 && electron .",
+    "dev": "concurrently -k \"npm run dev:vite\" \"npm run dev:electron\"",
+    "build:vite": "vite build",
+    "build": "npm run build:vite && electron-builder"
+  },
+  "keywords": [
+    "phone-link",
+    "kde-connect",
+    "electron",
+    "react",
+    "bluetooth-hfp"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "lucide-react": "^0.344.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "selfsigned": "^5.5.0",
+    "ssh2": "^1.15.0",
+    "tw-animate-css": "^1.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^29.1.0",
+    "electron-builder": "^24.13.3",
+    "vite": "^5.1.4",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.diyphonelink.app",
+    "productName": "Diy Phone Link",
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "src",
+        "to": "src"
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility",
+      "executableName": "diy-phone-link",
+      "desktop": {
+        "Name": "Diy Phone Link",
+        "Comment": "Intelligent phone-to-PC integration platform",
+        "Categories": "Utility;Network;"
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    }
+  }
+}

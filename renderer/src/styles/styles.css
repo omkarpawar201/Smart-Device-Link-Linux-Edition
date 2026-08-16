@@ -1,0 +1,185 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * LinkBridge design system — original Windows-inspired desktop language.
+ * Accent: "bridge teal". Neutrals are cool graphite, never pure black.
+ */
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 3px);
+  --radius-md: calc(var(--radius) - 1px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-rail: var(--rail);
+  --color-rail-foreground: var(--rail-foreground);
+  --shadow-panel: var(--shadow-panel);
+  --shadow-float: var(--shadow-float);
+}
+
+:root {
+  --radius: 0.5rem;
+  --background: oklch(0.968 0.004 240);
+  --foreground: oklch(0.22 0.015 250);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.985 0.003 240);
+  --surface-3: oklch(0.955 0.005 240);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.015 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.015 250);
+  --primary: oklch(0.55 0.098 205);
+  --primary-foreground: oklch(0.99 0.002 240);
+  --secondary: oklch(0.955 0.005 240);
+  --secondary-foreground: oklch(0.28 0.015 250);
+  --muted: oklch(0.955 0.005 240);
+  --muted-foreground: oklch(0.52 0.014 250);
+  --accent: oklch(0.94 0.018 205);
+  --accent-foreground: oklch(0.36 0.06 205);
+  --destructive: oklch(0.56 0.19 25);
+  --destructive-foreground: oklch(0.99 0.002 240);
+  --success: oklch(0.58 0.11 155);
+  --success-foreground: oklch(0.99 0.002 240);
+  --warning: oklch(0.72 0.13 75);
+  --warning-foreground: oklch(0.22 0.015 250);
+  --border: oklch(0.9 0.006 245);
+  --border-strong: oklch(0.84 0.008 245);
+  --input: oklch(0.9 0.006 245);
+  --ring: oklch(0.55 0.098 205);
+  --rail: oklch(0.945 0.005 240);
+  --rail-foreground: oklch(0.3 0.015 250);
+  --shadow-panel: 0 1px 2px oklch(0.2 0.02 250 / 0.06), 0 1px 1px oklch(0.2 0.02 250 / 0.04);
+  --shadow-float: 0 12px 32px oklch(0.2 0.02 250 / 0.16), 0 2px 8px oklch(0.2 0.02 250 / 0.08);
+}
+
+.dark {
+  --background: oklch(0.19 0.011 250);
+  --foreground: oklch(0.95 0.004 240);
+  --surface: oklch(0.235 0.012 250);
+  --surface-2: oklch(0.265 0.013 250);
+  --surface-3: oklch(0.295 0.014 250);
+  --card: oklch(0.235 0.012 250);
+  --card-foreground: oklch(0.95 0.004 240);
+  --popover: oklch(0.255 0.013 250);
+  --popover-foreground: oklch(0.95 0.004 240);
+  --primary: oklch(0.72 0.1 200);
+  --primary-foreground: oklch(0.18 0.02 240);
+  --secondary: oklch(0.29 0.013 250);
+  --secondary-foreground: oklch(0.94 0.004 240);
+  --muted: oklch(0.29 0.013 250);
+  --muted-foreground: oklch(0.68 0.012 250);
+  --accent: oklch(0.32 0.03 205);
+  --accent-foreground: oklch(0.86 0.06 200);
+  --destructive: oklch(0.62 0.18 25);
+  --destructive-foreground: oklch(0.98 0.002 240);
+  --success: oklch(0.68 0.12 155);
+  --success-foreground: oklch(0.18 0.02 240);
+  --warning: oklch(0.78 0.13 75);
+  --warning-foreground: oklch(0.18 0.02 240);
+  --border: oklch(0.32 0.012 250);
+  --border-strong: oklch(0.4 0.014 250);
+  --input: oklch(0.34 0.012 250);
+  --ring: oklch(0.72 0.1 200);
+  --rail: oklch(0.215 0.012 250);
+  --rail-foreground: oklch(0.9 0.006 245);
+  --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow-float: 0 16px 40px oklch(0 0 0 / 0.55), 0 2px 8px oklch(0 0 0 / 0.4);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family:
+      "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-primary) 30%, transparent);
+  }
+}
+
+@utility lb-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--color-muted-foreground) 40%, transparent) transparent;
+}
+
+@utility lb-panel {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+}
+
+@utility lb-focus {
+  &:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 1px;
+  }
+}
+
+/* Thin webkit scrollbars to match the desktop look */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--color-muted-foreground) 30%, transparent);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--color-muted-foreground) 50%, transparent);
+  background-clip: content-box;
+  border: 3px solid transparent;
+}

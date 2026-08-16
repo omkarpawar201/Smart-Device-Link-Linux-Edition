@@ -19,7 +19,7 @@ android/captures/
 *.keystore
 *.jks
 android
-new ui/
+new ui
 resources
 fix.docx
 implementation_plan.md

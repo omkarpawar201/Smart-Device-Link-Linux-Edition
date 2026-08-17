@@ -13,7 +13,7 @@ function Section({ title, children }) {
 }
 
 export default function SettingsPage() {
-    const { theme, setTheme, connection, setConnection, reconnect, disconnect, deviceName, battery, isCharging, toast } = useApp();
+    const { theme, setTheme, accentColor, setAccentColor, autoStart, setAutoStart, connection, setConnection, reconnect, disconnect, deviceName, battery, isCharging, toast } = useApp();
     const [discovered, setDiscovered] = useState([]);
     const [pairingRequest, setPairingRequest] = useState(null);
     const [scanning, setScanning] = useState(false);
@@ -150,6 +150,9 @@ export default function SettingsPage() {
                     <SettingRow label="Auto reconnect" hint="Re-establish the bridge when your phone returns to this network">
                         <Toggle checked={flags.autoReconnect} onChange={set('autoReconnect')} />
                     </SettingRow>
+                    <SettingRow label="Start with system" hint="Open LinkBridge automatically when you sign in to Windows/Linux">
+                        <Toggle checked={autoStart} onChange={setAutoStart} />
+                    </SettingRow>
                 </Section>
 
                 <Section title="Notifications">
@@ -191,12 +194,30 @@ export default function SettingsPage() {
                 </Section>
 
                 <Section title="Appearance">
-                    <SettingRow label="Theme" hint="LinkBridge follows Windows by default">
+                    <SettingRow label="Theme" hint="LinkBridge matches your system by default">
                         <div className="flex gap-1.5">
                             {[['light', Sun, 'Light'], ['dark', MoonStar, 'Dark'], ['system', Monitor, 'System']].map(([key, Icon, label]) => (
                                 <Button key={key} variant={theme === key ? 'primary' : 'subtle'} onClick={() => setTheme(key)}>
                                     <Icon className="h-3.5 w-3.5" /> {label}
                                 </Button>
+                            ))}
+                        </div>
+                    </SettingRow>
+                    <SettingRow label="Accent Color" hint="Personalize the primary highlight color">
+                        <div className="flex gap-2">
+                            {[['blue', '#3B82F6', 'Blue'], ['violet', '#8B5CF6', 'Violet'], ['emerald', '#10B981', 'Emerald'], ['rose', '#F43F5E', 'Rose'], ['amber', '#F59E0B', 'Amber']].map(([key, color, label]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setAccentColor(key)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-medium transition-all ${
+                                        accentColor === key
+                                            ? 'bg-primary text-primary-foreground shadow-sm scale-[1.03]'
+                                            : 'bg-surface-2 border border-border hover:bg-surface-3'
+                                    }`}
+                                >
+                                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+                                    {label}
+                                </button>
                             ))}
                         </div>
                     </SettingRow>

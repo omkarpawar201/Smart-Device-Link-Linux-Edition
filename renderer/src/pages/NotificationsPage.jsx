@@ -5,7 +5,7 @@ import { useApp } from '../appStore';
 import { timeAgo } from '../lib/utils';
 
 export default function NotificationsPage() {
-    const { toast, notifications, refreshNotifications, dismissNotification, clearAllNotifications, replyToNotification } = useApp();
+    const { toast, notifications, refreshNotifications, dismissNotification, clearAllNotifications, replyToNotification, sendNotificationAction } = useApp();
     const [query, setQuery] = useState('');
     const [replyOpen, setReplyOpen] = useState(null);
     const [replyText, setReplyText] = useState('');
@@ -96,6 +96,14 @@ export default function NotificationsPage() {
                                                                     <Reply className="h-3.5 w-3.5" /> Reply
                                                                 </Button>
                                                             )}
+                                                            {Array.isArray(n.actions) && n.actions.map((act) => (
+                                                                <Button key={act.key} size="sm" variant="subtle" onClick={() => {
+                                                                    sendNotificationAction(n.id, act.key);
+                                                                    toast({ title: 'Action triggered', description: `Triggered "${act.label}" on ${n.appName}.` });
+                                                                }}>
+                                                                    {act.label}
+                                                                </Button>
+                                                            ))}
                                                             <Button size="sm" variant="ghost" onClick={() => { dismissNotification(n.id); toast({ title: 'Notification dismissed', app: n.appName }); }}>
                                                                 Dismiss
                                                             </Button>

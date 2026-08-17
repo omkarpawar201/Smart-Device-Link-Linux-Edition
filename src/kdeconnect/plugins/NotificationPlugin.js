@@ -1,5 +1,43 @@
 const BasePlugin = require('./BasePlugin');
 
+function getFriendlyAppName(pkg) {
+    if (!pkg) return 'Android App';
+    const mappings = {
+        'com.apple.android.music': 'Apple Music',
+        'com.spotify.music': 'Spotify',
+        'com.google.android.youtube': 'YouTube',
+        'com.google.android.apps.youtube.music': 'YouTube Music',
+        'com.amazon.mp3': 'Amazon Music',
+        'com.soundcloud.android': 'SoundCloud',
+        'com.pandora.android': 'Pandora',
+        'org.videolan.vlc': 'VLC',
+        'com.miui.player': 'Mi Music',
+        'com.sec.android.app.music': 'Samsung Music',
+        'com.jio.myjio': 'MyJio',
+        'com.whatsapp': 'WhatsApp',
+        'com.instagram.android': 'Instagram',
+        'com.facebook.katana': 'Facebook',
+        'com.facebook.orca': 'Messenger',
+        'com.twitter.android': 'Twitter / X',
+        'com.snapchat.android': 'Snapchat',
+        'com.reddit.frontpage': 'Reddit',
+        'com.android.chrome': 'Chrome',
+        'org.mozilla.firefox': 'Firefox',
+        'com.google.android.gm': 'Gmail',
+        'com.google.android.apps.messaging': 'Google Messages',
+        'com.android.phone': 'Phone',
+        'com.android.server.telecom': 'Phone Call'
+    };
+    if (mappings[pkg]) return mappings[pkg];
+    if (pkg.includes('.')) {
+        const parts = pkg.split('.');
+        const last = parts[parts.length - 1];
+        if (last === 'myjio') return 'MyJio';
+        return last.charAt(0).toUpperCase() + last.slice(1);
+    }
+    return pkg;
+}
+
 class NotificationPlugin extends BasePlugin {
     constructor(eventEmitter) {
         super('NotificationPlugin');
@@ -9,7 +47,7 @@ class NotificationPlugin extends BasePlugin {
     }
 
     getCapabilities() {
-        return ['kdeconnect.notification', 'kdeconnect.notification.request'];
+        return ['kdeconnect.notification', 'kdeconnect.notification.request', 'kdeconnect.notification.action'];
     }
 
     handlePacket(device, packet) {
@@ -39,16 +77,25 @@ class NotificationPlugin extends BasePlugin {
             // Fresh content or updated text: clear old signature
             this.dismissedSignatures.delete(notifId);
 
+            const packageName = body.packageName || '';
+            let appName = body.appName || '';
+            if (!appName || appName === packageName || appName.includes('.')) {
+                appName = getFriendlyAppName(packageName);
+            }
+
             const notifData = {
                 id: notifId,
                 deviceId: device.info.id,
-                appName: body.appName || 'Android App',
-                packageName: body.packageName || '',
+                appName: appName,
+                packageName: packageName,
                 title: title,
                 text: text,
                 ticker: body.ticker || '',
                 time: Date.now(),
                 requestReplyId: body.requestReplyId || null,
+                // Non-reply action buttons (like / archive / mark-read, etc.) as
+                // [{key,label}] — rendered on the notification card (Phase 7).
+                actions: Array.isArray(body.actions) ? body.actions : [],
                 isClearable: body.isClearable !== false,
                 silent: body.silent || false
             };
@@ -82,6 +129,23 @@ class NotificationPlugin extends BasePlugin {
 
         console.log(`[NotificationPlugin] Sending inline reply to ${device.info.name}: "${replyText}"`);
         return device.sendPacket(replyPacket);
+    }
+
+    // Trigger one of the phone's notification action buttons (Phase 7).
+    sendNotificationAction(device, requestId, actionKey) {
+        if (!device || !requestId || !actionKey) return false;
+
+        const actionPacket = {
+            id: Date.now(),
+            type: 'kdeconnect.notification.action',
+            body: {
+                requestId: requestId,
+                actionKey: actionKey
+            }
+        };
+
+        console.log(`[NotificationPlugin] Sending notification action "${actionKey}" to ${device.info.name}`);
+        return device.sendPacket(actionPacket);
     }
 
     dismissNotification(device, notificationId) {

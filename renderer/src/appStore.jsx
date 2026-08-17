@@ -24,7 +24,9 @@ export const NAV_KEYS = [
 
 export function AppProvider({ children }) {
     const [route, setRoute] = useState('home');
-    const [theme, setTheme] = useState('dark');
+    const [theme, setThemeState] = useState('dark');
+    const [accentColor, setAccentColorState] = useState('blue');
+    const [autoStart, setAutoStartState] = useState(false);
     const [systemDark, setSystemDark] = useState(false);
 
     const [deviceState, setDeviceState] = useState({
@@ -95,7 +97,22 @@ export function AppProvider({ children }) {
         }
     }, [applyDeviceStatus]);
 
-    // Theme resolution
+    // Fetch settings on startup
+    useEffect(() => {
+        if (window.api && window.api.invoke) {
+            window.api.invoke('get-settings')
+                .then((cfg) => {
+                    if (cfg) {
+                        if (cfg.theme) setThemeState(cfg.theme);
+                        if (cfg.accentColor) setAccentColorState(cfg.accentColor);
+                        if (cfg.autoStart !== undefined) setAutoStartState(!!cfg.autoStart);
+                    }
+                })
+                .catch((e) => console.error('[appStore] load settings failed:', e));
+        }
+    }, []);
+
+    // Theme resolution system listener
     useEffect(() => {
         const mq = window.matchMedia('(prefers-color-scheme: dark)');
         setSystemDark(mq.matches);
@@ -108,7 +125,100 @@ export function AppProvider({ children }) {
 
     useEffect(() => {
         document.documentElement.classList.toggle('dark', resolvedTheme === 'dark');
-    }, [resolvedTheme]);
+
+        const root = document.documentElement;
+        const accents = {
+            blue: {
+                primary: 'oklch(0.55 0.098 205)',
+                ring: 'oklch(0.55 0.098 205)',
+                accent: 'oklch(0.94 0.018 205)',
+                accentForeground: 'oklch(0.36 0.06 205)',
+                dark: {
+                    primary: 'oklch(0.72 0.1 200)',
+                    ring: 'oklch(0.72 0.1 200)',
+                    accent: 'oklch(0.32 0.03 205)',
+                    accentForeground: 'oklch(0.86 0.06 200)'
+                }
+            },
+            violet: {
+                primary: 'oklch(0.55 0.15 290)',
+                ring: 'oklch(0.55 0.15 290)',
+                accent: 'oklch(0.94 0.03 290)',
+                accentForeground: 'oklch(0.36 0.08 290)',
+                dark: {
+                    primary: 'oklch(0.72 0.15 290)',
+                    ring: 'oklch(0.72 0.15 290)',
+                    accent: 'oklch(0.32 0.04 290)',
+                    accentForeground: 'oklch(0.86 0.08 290)'
+                }
+            },
+            emerald: {
+                primary: 'oklch(0.55 0.12 140)',
+                ring: 'oklch(0.55 0.12 140)',
+                accent: 'oklch(0.94 0.02 140)',
+                accentForeground: 'oklch(0.36 0.06 140)',
+                dark: {
+                    primary: 'oklch(0.72 0.12 140)',
+                    ring: 'oklch(0.72 0.12 140)',
+                    accent: 'oklch(0.32 0.03 140)',
+                    accentForeground: 'oklch(0.86 0.06 140)'
+                }
+            },
+            rose: {
+                primary: 'oklch(0.55 0.14 15)',
+                ring: 'oklch(0.55 0.14 15)',
+                accent: 'oklch(0.94 0.03 15)',
+                accentForeground: 'oklch(0.36 0.08 15)',
+                dark: {
+                    primary: 'oklch(0.72 0.14 15)',
+                    ring: 'oklch(0.72 0.14 15)',
+                    accent: 'oklch(0.32 0.04 15)',
+                    accentForeground: 'oklch(0.86 0.08 15)'
+                }
+            },
+            amber: {
+                primary: 'oklch(0.65 0.12 70)',
+                ring: 'oklch(0.65 0.12 70)',
+                accent: 'oklch(0.94 0.02 70)',
+                accentForeground: 'oklch(0.42 0.08 70)',
+                dark: {
+                    primary: 'oklch(0.75 0.12 70)',
+                    ring: 'oklch(0.75 0.12 70)',
+                    accent: 'oklch(0.35 0.03 70)',
+                    accentForeground: 'oklch(0.88 0.06 70)'
+                }
+            }
+        };
+
+        const activeAccent = accents[accentColor] || accents.blue;
+        const colors = resolvedTheme === 'dark' ? activeAccent.dark : activeAccent;
+
+        root.style.setProperty('--primary', colors.primary);
+        root.style.setProperty('--ring', colors.ring);
+        root.style.setProperty('--accent', colors.accent);
+        root.style.setProperty('--accent-foreground', colors.accentForeground);
+    }, [resolvedTheme, accentColor]);
+
+    const setTheme = useCallback((val) => {
+        setThemeState(val);
+        if (window.api && window.api.invoke) {
+            window.api.invoke('save-settings', { theme: val }).catch(() => {});
+        }
+    }, []);
+
+    const setAccentColor = useCallback((val) => {
+        setAccentColorState(val);
+        if (window.api && window.api.invoke) {
+            window.api.invoke('save-settings', { accentColor: val }).catch(() => {});
+        }
+    }, []);
+
+    const setAutoStart = useCallback((val) => {
+        setAutoStartState(val);
+        if (window.api && window.api.invoke) {
+            window.api.invoke('save-settings', { autoStart: val }).catch(() => {});
+        }
+    }, []);
 
     // Cleanup reconnect fallback timer
     useEffect(() => {
@@ -179,6 +289,10 @@ export function AppProvider({ children }) {
         if (window.api && window.api.send) window.api.send('send-reply', { requestReplyId, text: text.trim() });
     }, []);
 
+    const sendNotificationAction = useCallback((requestId, actionKey) => {
+        if (window.api && window.api.send) window.api.send('send-notification-action', { requestId, actionKey });
+    }, []);
+
     const simulateCall = useCallback(() => {
         if (window.api && window.api.send) window.api.send('simulate-call');
     }, []);
@@ -189,6 +303,10 @@ export function AppProvider({ children }) {
             setRoute,
             theme,
             setTheme,
+            accentColor,
+            setAccentColor,
+            autoStart,
+            setAutoStart,
             resolvedTheme,
             deviceState,
             connection,
@@ -206,6 +324,7 @@ export function AppProvider({ children }) {
             dismissNotification,
             clearAllNotifications,
             replyToNotification,
+            sendNotificationAction,
             simulateCall,
             call: calls.call,
             callHistory: calls.history,
@@ -219,6 +338,11 @@ export function AppProvider({ children }) {
             startCall: calls.dial,
             removeHistory: calls.removeHistory,
             clearCallHistory: calls.clearHistory,
+            micSources: calls.micSources,
+            selectedMic: calls.selectedMic,
+            micGain: calls.micGain,
+            selectMic: calls.selectMic,
+            adjustMicGain: calls.adjustMicGain,
             incomingCall: calls.call && calls.call.status === 'RINGING',
             activeCall: calls.call && calls.call.status === 'ACTIVE' ? calls.call : null,
             ...media
@@ -227,6 +351,8 @@ export function AppProvider({ children }) {
             route,
             theme,
             resolvedTheme,
+            accentColor,
+            autoStart,
             deviceState,
             connection,
             reconnect,
@@ -241,6 +367,7 @@ export function AppProvider({ children }) {
             dismissNotification,
             clearAllNotifications,
             replyToNotification,
+            sendNotificationAction,
             simulateCall,
             calls.call,
             calls.history,
@@ -254,6 +381,11 @@ export function AppProvider({ children }) {
             calls.dial,
             calls.removeHistory,
             calls.clearHistory,
+            calls.micSources,
+            calls.selectedMic,
+            calls.micGain,
+            calls.selectMic,
+            calls.adjustMicGain,
             media
         ]
     );

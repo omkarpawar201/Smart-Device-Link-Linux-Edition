@@ -13,6 +13,7 @@ class DeviceManager extends EventEmitter {
         this.discoveredDevices = new Map();
         this.broadcastInterval = null;
         this._retryTcpTimer = null;
+        this._retryUdpTimer = null;
     }
 
     startDiscovery() {
@@ -79,6 +80,7 @@ class DeviceManager extends EventEmitter {
             this.tcpServer.on('error', (err) => {
                 console.error('[TCP DeviceManager] Server Error:', err.message);
                 if (err.code === 'EADDRINUSE') {
+                    this.tryStopNativeKdeConnect();
                     this.emit('fatalError', {
                         code: 'PORT_1716_IN_USE',
                         message: `TCP port ${this.port} is already in use — another KDE Connect instance (e.g. the native kdeconnectd daemon) is running. Stop it with:  systemctl --user stop kdeconnectd   (or: killall kdeconnectd)  and restart the app.`
@@ -91,7 +93,7 @@ class DeviceManager extends EventEmitter {
                             this.tcpServer = null;
                             console.log('[TCP DeviceManager] Retrying TCP 1716 bind...');
                             this.startTcpServer();
-                        }, 15000);
+                        }, 2000);
                         if (this._retryTcpTimer.unref) this._retryTcpTimer.unref();
                     }
                 }
@@ -154,10 +156,20 @@ class DeviceManager extends EventEmitter {
         this.udpSocket.on('error', (err) => {
             console.error('[UDP DeviceManager] Socket Error:', err.message);
             if (err.code === 'EADDRINUSE') {
+                this.tryStopNativeKdeConnect();
                 this.emit('fatalError', {
                     code: 'PORT_1716_IN_USE',
                     message: `UDP port ${this.port} is already in use — the native KDE Connect daemon (kdeconnectd) is running. Stop it with:  systemctl --user stop kdeconnectd   (or: killall kdeconnectd)  and restart the app.`
                 });
+                if (!this._retryUdpTimer) {
+                    this._retryUdpTimer = setTimeout(() => {
+                        this._retryUdpTimer = null;
+                        this.udpSocket = null;
+                        console.log('[UDP DeviceManager] Retrying UDP 1716 bind...');
+                        this.startUdpDiscovery();
+                    }, 2000);
+                    if (this._retryUdpTimer.unref) this._retryUdpTimer.unref();
+                }
             }
         });
 
@@ -275,10 +287,29 @@ class DeviceManager extends EventEmitter {
         return Array.from(addresses);
     }
 
+    tryStopNativeKdeConnect() {
+        if (process.platform !== 'linux') return;
+        try {
+            const { execSync } = require('child_process');
+            console.log('[DeviceManager] Port 1716 in use. Attempting to stop native kdeconnectd...');
+            execSync('systemctl --user stop kdeconnectd || killall kdeconnectd || true');
+        } catch (e) {
+            console.warn('[DeviceManager] Failed to stop native kdeconnectd:', e.message);
+        }
+    }
+
     stopDiscovery() {
         if (this.broadcastInterval) {
             clearInterval(this.broadcastInterval);
             this.broadcastInterval = null;
+        }
+        if (this._retryTcpTimer) {
+            clearTimeout(this._retryTcpTimer);
+            this._retryTcpTimer = null;
+        }
+        if (this._retryUdpTimer) {
+            clearTimeout(this._retryUdpTimer);
+            this._retryUdpTimer = null;
         }
         if (this.udpSocket) {
             this.udpSocket.close();

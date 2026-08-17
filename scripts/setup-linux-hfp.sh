@@ -28,9 +28,15 @@ ExecStart=
 ExecStart=$BLUETOOTHD --noplugin=hfp-hf,hfp-ag
 EOF
 
-# 2. WirePlumber drop-in: explicitly enable the HF role + mSBC wideband codec
+# 2. WirePlumber drop-in: explicitly enable the HF role + mSBC wideband codec.
+#    Most phones advertise only the AG role over SDP (e.g. "Handsfree Audio
+#    Gateway"), so PipeWire exposes the card as an "audio-gateway" profile (PC
+#    acts as the gateway) rather than "headset-head-unit". Both roles are
+#    enabled so either topology works. mSBC (16 kHz wideband) is what fixes
+#    "muffled" outgoing audio; the CVSD fallback (8 kHz) is why a PC mic can
+#    sound telephone-flat.
 WP_DROP="$HOME/.config/wireplumber/wireplumber.conf.d"
-echo "[2/4] Configuring WirePlumber bluez5 roles (hfp_hf + msbc)..."
+echo "[2/4] Configuring WirePlumber bluez5 roles (hfp_hf/hfp_ag + msbc)..."
 mkdir -p "$WP_DROP"
 cat > "$WP_DROP/50-bluez-hfp.conf" <<'EOF'
 monitor.bluez.properties = {

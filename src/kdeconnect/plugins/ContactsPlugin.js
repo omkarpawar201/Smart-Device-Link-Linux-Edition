@@ -1,4 +1,7 @@
 const BasePlugin = require('./BasePlugin');
+const { app } = require('electron');
+const path = require('path');
+const fs = require('fs');
 
 const VCARDS_REQUEST_CHUNK_SIZE = 50;
 
@@ -7,6 +10,8 @@ class ContactsPlugin extends BasePlugin {
         super('ContactsPlugin');
         this.emitter = eventEmitter;
         this.contactsMap = new Map(); // uid -> { id, name, number, numbers, avatar }
+        this.cacheFile = path.join(app.getPath('userData'), 'contacts-cache.json');
+        this.loadCache();
     }
 
     getCapabilities() {
@@ -59,6 +64,7 @@ class ContactsPlugin extends BasePlugin {
                 if (this.emitter) {
                     this.emitter.emit('contactsUpdated', this.getContactsList());
                 }
+                this.saveCache();
             }
             return;
         }
@@ -107,6 +113,7 @@ class ContactsPlugin extends BasePlugin {
                 if (this.emitter) {
                     this.emitter.emit('contactsUpdated', this.getContactsList());
                 }
+                this.saveCache();
             }
         }
     }
@@ -178,6 +185,28 @@ class ContactsPlugin extends BasePlugin {
             }
         }
         return phoneNumber;
+    }
+
+    saveCache() {
+        try {
+            const data = JSON.stringify(Array.from(this.contactsMap.entries()));
+            fs.writeFileSync(this.cacheFile, data, 'utf8');
+        } catch (e) {
+            console.error('[ContactsPlugin] Failed to save contacts cache:', e.message);
+        }
+    }
+
+    loadCache() {
+        try {
+            if (fs.existsSync(this.cacheFile)) {
+                const data = fs.readFileSync(this.cacheFile, 'utf8');
+                const entries = JSON.parse(data);
+                this.contactsMap = new Map(entries);
+                console.log(`[ContactsPlugin] Loaded ${this.contactsMap.size} contacts from persistent cache.`);
+            }
+        } catch (e) {
+            console.warn('[ContactsPlugin] Failed to load contacts cache:', e.message);
+        }
     }
 
     getContactsList() {

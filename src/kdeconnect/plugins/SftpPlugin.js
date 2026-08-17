@@ -56,6 +56,7 @@ class SftpPlugin extends BasePlugin {
 
     requestSftpMount(device) {
         if (!device) return false;
+        this.currentDevice = device;
 
         // The phone regenerates its SFTP password on every startBrowsing request, and responses
         // can arrive out of order. Sending multiple overlapping requests can therefore leave us

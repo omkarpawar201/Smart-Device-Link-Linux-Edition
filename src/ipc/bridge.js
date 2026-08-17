@@ -310,7 +310,6 @@ function initKDEConnectBridge(mainWindow) {
     const autoConnectPairedDevice = (deviceInfo) => {
         if (!deviceInfo || !deviceInfo.id) return;
         if (pairingManager.isPaired(deviceInfo.id) !== true) return;
-        if (activeDeviceConnections.has(deviceInfo.id)) return;
 
         // Nudge the phone to open a connection to us: the phone's udpPacketReceived
         // reacts to ANY identity packet (broadcast or unicast). A unicast to its IP
@@ -318,6 +317,8 @@ function initKDEConnectBridge(mainWindow) {
         if (deviceManager.sendIdentityToIp) {
             deviceManager.sendIdentityToIp(deviceInfo.ip);
         }
+
+        if (activeDeviceConnections.has(deviceInfo.id)) return;
 
         // The phone normally connects to us on its own whenever it receives our
         // UDP broadcast. Give it a moment to do that before we try the outbound
@@ -659,6 +660,27 @@ function initKDEConnectBridge(mainWindow) {
     ipcMain.on('toggle-mute-audio', (event, { muted }) => {
         audioBridge.setMicrophoneMuted(muted);
         rfcommProtocol.setMicMuted(muted);
+    });
+
+    ipcMain.handle('audio:list-mic-sources', async () => {
+        if (!audioBridge) return [];
+        return audioBridge.listPcMicrophones();
+    });
+
+    ipcMain.on('audio:set-mic-source', (event, { name } = {}) => {
+        if (!audioBridge) return;
+        audioBridge.setMicrophoneSource(name);
+    });
+
+    ipcMain.on('audio:set-mic-gain', (event, { percent } = {}) => {
+        if (!audioBridge) return;
+        audioBridge.setMicrophoneGain(percent);
+    });
+
+    ipcMain.handle('audio:get-mic-state', async () => {
+        if (!audioBridge) return { source: null, gain: 100 };
+        const gain = await audioBridge.getMicrophoneGain();
+        return { source: audioBridge.getMicrophoneSource(), gain };
     });
 
     ipcMain.on('transfer-call-audio', (event, { target }) => {
@@ -1305,6 +1327,35 @@ function initKDEConnectBridge(mainWindow) {
         if (activeDev && smsPlugin) smsPlugin.sendSms(activeDev, phoneNumber, messageText);
     });
 
+    // Unified Settings Handlers
+    ipcMain.handle('get-settings', () => {
+        return rfcommClient ? rfcommClient.loadConfig() : {};
+    });
+
+    ipcMain.handle('save-settings', (event, partialSettings) => {
+        if (rfcommClient) {
+            rfcommClient.saveConfig(partialSettings);
+            if (partialSettings.hasOwnProperty('autoStart')) {
+                const enabled = !!partialSettings.autoStart;
+                try {
+                    let execPath = app.getPath('exe');
+                    if (process.platform === 'linux' && process.env.APPIMAGE) {
+                        execPath = process.env.APPIMAGE;
+                    }
+                    app.setLoginItemSettings({
+                        openAtLogin: enabled,
+                        path: execPath
+                    });
+                    console.log(`[Bridge] AutoStart login setting updated to: ${enabled} (path: ${execPath})`);
+                } catch (e) {
+                    console.warn('[Bridge] Failed to update login item settings:', e.message);
+                }
+            }
+            return rfcommClient.loadConfig();
+        }
+        return {};
+    });
+
     // Contacts Handlers
     ipcMain.handle('get-contacts', () => {
         return contactsPlugin ? contactsPlugin.getContactsList() : [];
@@ -1325,6 +1376,11 @@ function initKDEConnectBridge(mainWindow) {
         if (activeDev) notificationPlugin.replyToNotification(activeDev, requestReplyId, text);
     });
 
+    ipcMain.on('send-notification-action', (event, { requestId, actionKey }) => {
+        const activeDev = getFirstActiveDevice();
+        if (activeDev) notificationPlugin.sendNotificationAction(activeDev, requestId, actionKey);
+    });
+
     ipcMain.on('dismiss-notification', (event, { id }) => {
         const activeDev = getFirstActiveDevice();
         if (activeDev) notificationPlugin.dismissNotification(activeDev, id);
@@ -1338,6 +1394,12 @@ function initKDEConnectBridge(mainWindow) {
     let clipboardWatchTimer = null;
     let lastPcClipboard = '';
     let clipboardAutoSync = true;
+    try {
+        const cfg = rfcommClient.loadConfig();
+        if (cfg && cfg.hasOwnProperty('clipboardAutoSync')) {
+            clipboardAutoSync = !!cfg.clipboardAutoSync;
+        }
+    } catch (e) {}
 
     const pushClipboardItem = (item) => {
         if (currentMainWindow && !currentMainWindow.isDestroyed()) {
@@ -1379,7 +1441,7 @@ function initKDEConnectBridge(mainWindow) {
         }
     };
 
-    startClipboardWatch();
+    if (clipboardAutoSync) startClipboardWatch();
 
     ipcMain.handle('get-clipboard-history', () => {
         return clipboardPlugin ? clipboardPlugin.getHistory() : [];
@@ -1389,6 +1451,9 @@ function initKDEConnectBridge(mainWindow) {
 
     ipcMain.on('set-clipboard-auto-sync', (event, { enabled }) => {
         clipboardAutoSync = !!enabled;
+        try {
+            rfcommClient.saveConfig({ clipboardAutoSync });
+        } catch (e) {}
         if (clipboardAutoSync) startClipboardWatch();
         else stopClipboardWatch();
     });

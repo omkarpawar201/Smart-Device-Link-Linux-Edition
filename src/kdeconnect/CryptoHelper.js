@@ -259,6 +259,7 @@ class CryptoHelper {
                 deviceName: this.getDeviceName(),
                 protocolVersion: 7,
                 deviceType: 'desktop',
+                deviceOs: os.type() === 'Windows_NT' ? 'Windows' : (os.type() === 'Darwin' ? 'macOS' : os.type()),
                 tcpPort: 1716,
                 incomingCapabilities: [
                     'kdeconnect.notification',

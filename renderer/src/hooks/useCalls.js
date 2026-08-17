@@ -244,6 +244,37 @@ export default function useCalls() {
         setCall(outgoing);
     }, []);
 
+    // PC microphone selection + gain for call routing (Linux HFP bridge).
+    const [micSources, setMicSources] = useState([]);
+    const [selectedMic, setSelectedMic] = useState(null);
+    const [micGain, setMicGain] = useState(100);
+
+    const refreshMicSources = useCallback(async () => {
+        if (!window.api || !window.api.invoke) return;
+        try {
+            const list = await window.api.invoke('audio:list-mic-sources');
+            setMicSources(Array.isArray(list) ? list : []);
+            const state = await window.api.invoke('audio:get-mic-state');
+            if (state) {
+                setSelectedMic(state.source || null);
+                if (typeof state.gain === 'number') setMicGain(state.gain);
+            }
+        } catch (e) {
+            // IPC not wired (e.g. UI-only dev server) — ignore
+        }
+    }, []);
+
+    const selectMic = useCallback((name) => {
+        if (window.api && window.api.send) window.api.send('audio:set-mic-source', { name });
+        setSelectedMic(name || null);
+    }, []);
+
+    const adjustMicGain = useCallback((percent) => {
+        const pct = Math.max(0, Math.min(200, Number(percent) || 100));
+        if (window.api && window.api.send) window.api.send('audio:set-mic-gain', { percent: pct });
+        setMicGain(pct);
+    }, []);
+
     // Register telephony listeners once (guarded against React StrictMode double-mount)
     const registered = useRef(false);
     useEffect(() => {
@@ -257,6 +288,10 @@ export default function useCalls() {
         if (window.api.onMissedCall) window.api.onMissedCall(handleMissed);
     }, [handleIncoming, handleTalking, handleEnded, handleMissed]);
 
+    useEffect(() => {
+        refreshMicSources();
+    }, [refreshMicSources]);
+
     return {
         call,
         history,
@@ -269,6 +304,12 @@ export default function useCalls() {
         muteRinger,
         dial,
         removeHistory,
-        clearHistory
+        clearHistory,
+        micSources,
+        selectedMic,
+        micGain,
+        refreshMicSources,
+        selectMic,
+        adjustMicGain
     };
 }

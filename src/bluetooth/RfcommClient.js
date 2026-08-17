@@ -43,6 +43,25 @@ class RfcommClient extends EventEmitter {
         // Phone-initiated server mode: this phone will not answer PC-initiated
         // connect() calls, so the bridge runs as the RFCOMM listener by default.
         this.listen = options.listen !== false;
+
+        // Process exit cleanup hooks
+        process.on('exit', () => {
+            if (this.child) {
+                try { this.child.kill(); } catch (e) {}
+            }
+        });
+        process.on('SIGINT', () => {
+            if (this.child) {
+                try { this.child.kill(); } catch (e) {}
+            }
+            process.exit();
+        });
+        process.on('SIGTERM', () => {
+            if (this.child) {
+                try { this.child.kill(); } catch (e) {}
+            }
+            process.exit();
+        });
     }
 
     // ---------- config persistence ----------
@@ -256,6 +275,14 @@ $list | Select-Object -Unique | ConvertTo-Json -Compress
             this.child = null;
         }
 
+        // Clean up any stale orphaned python listen processes on Linux to free up D-Bus profile slots
+        if (process.platform !== 'win32') {
+            try {
+                const { execSync } = require('child_process');
+                execSync('pkill -f rfcomm-listen.py || true');
+            } catch (e) { /* ignore */ }
+        }
+
         let args;
         let command;
         if (process.platform === 'win32') {
@@ -329,6 +356,12 @@ $list | Select-Object -Unique | ConvertTo-Json -Compress
     handleStatusLine(line) {
         if (line.startsWith('[STATUS] CONNECTED') || line.startsWith('[STATUS] ACCEPTED')) {
             console.log(`[RfcommClient] RFCOMM link up: ${line}`);
+            const parts = line.split(' ');
+            if (parts.length > 2 && parts[2]) {
+                const parsedMac = parts[2].trim();
+                this.connectedMac = parsedMac;
+                this.setPhoneMac(parsedMac);
+            }
             this.connecting = false;
             this.connected = true;
             this.bridgeReady = true;

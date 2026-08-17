@@ -9,9 +9,13 @@ const { execFile, spawn } = require('child_process');
 // default source. Requires bluetoothd to run WITHOUT its built-in hfp-hf/hfp-ag
 // plugins so PipeWire can own the Hands-Free profile (scripts/setup-linux-hfp.sh).
 
-const HFP_ROLE_VALUES = ['hfp_hf', 'hfp-hf', 'hsp_hs', 'hsp-hs'];
-const HFP_PROFILE_VALUES = ['hfp-hf', 'hfp_hf', 'hsp-hs', 'hsp_hs'];
-const HFP_NAME_MARKERS = ['headset-head-unit', 'headset_hs', '.sco.', 'sco_source', 'sco_sink'];
+// Both roles are matched because the PC can end up as the Hands-Free unit
+// (headset-head-unit profile, role hfp_hf) or as the Audio Gateway
+// (audio-gateway profile, role hfp_ag) depending on what the phone advertises
+// over SDP. Matching only the HF values silently missed AG-role SCO nodes.
+const HFP_ROLE_VALUES = ['hfp_hf', 'hfp-hf', 'hsp_hs', 'hsp-hs', 'hfp_ag', 'hfp-ag', 'hsp_ag', 'hsp-ag'];
+const HFP_PROFILE_VALUES = ['hfp-hf', 'hfp_hf', 'hsp-hs', 'hsp_hs', 'hfp-ag', 'hfp_ag', 'hsp-ag', 'hsp_ag'];
+const HFP_NAME_MARKERS = ['headset-head-unit', 'headset_hs', 'audio-gateway', '.sco.', 'sco_source', 'sco_sink'];
 const NODE_RETRY_MS = 700;
 const NODE_WAIT_MS = 12000;
 const NODE_BG_RETRY_MS = 3000;
@@ -42,6 +46,9 @@ class AudioBridge extends EventEmitter {
         this._linkPair = null; // { fromPhone: [out, in], toPhone: [out, in] }
         this._currentCard = null;
         this._lastMicSource = null;
+        // Optional explicit PC input (mic) to route to the phone. When null the
+        // system default source is used. Set via setMicrophoneSource().
+        this.micSource = null;
     }
 
     setPhoneMac(mac) {
@@ -74,6 +81,17 @@ class AudioBridge extends EventEmitter {
         return got.includes(want) || want.includes(got);
     }
 
+    // The SCO loopback nodes embed the address in their name:
+    // bluez_input.<addr>.<n> / bluez_output.<addr>.<n> (addr uses '_' separators).
+    _macInName(name) {
+        const want = this._wantMac();
+        if (!want) return true;
+        const m = /^bluez_(?:input|output)\.([0-9A-F_]+)\./.exec(String(name || '').toUpperCase());
+        if (!m) return false;
+        const got = m[1].replace(/[^0-9A-F]/g, '');
+        return got.includes(want) || want.includes(got);
+    }
+
     async _pwNodes() {
         const res = await this._exec('pw-dump', [], { timeout: 5000 });
         if (!res.ok) {
@@ -89,36 +107,84 @@ class AudioBridge extends EventEmitter {
         }
     }
 
+    // SCO node codec ids: CVSD=0x01, mSBC=0x02, transport: A2DP=2, SCO=3.
     _isHfpNode(props, name) {
         const role = props['api.bluez5.role'] || '';
         const profile = props['api.bluez5.profile'] || '';
         if (HFP_ROLE_VALUES.includes(role)) return true;
         if (HFP_PROFILE_VALUES.includes(profile)) return true;
-        return HFP_NAME_MARKERS.some((m) => (name || '').includes(m));
+        if (HFP_NAME_MARKERS.some((m) => (name || '').includes(m))) return true;
+        // Native-backend SCO nodes are named bluez_input.<addr>.<n> /
+        // bluez_output.<addr>.<n>, the same scheme A2DP media nodes use. Treat
+        // them as HFP unless they are explicitly an A2DP role/profile.
+        if (/^bluez_(input|output)\./.test(name || '')) {
+            const A2DP = /a2dp|aac|sbc|ldac|aptx|opus/i;
+            if (!A2DP.test(role) && !A2DP.test(profile)) return true;
+        }
+        // Fall back to the transport/codec props (SCO transport, CVSD/mSBC).
+        const transport = Number(props['api.bluez5.transport']);
+        const codec = Number(props['api.bluez5.codec']);
+        if (transport === 3) return true;
+        if (codec === 1 || codec === 2) return true;
+        return false;
     }
 
     // Returns { sinkNode, sourceNode } node names for the phone's HFP SCO nodes.
     async _findHfpNodes() {
         const nodes = await this._pwNodes();
         const found = { sinkNode: null, sourceNode: null };
+        const sco = [];
         for (const o of nodes) {
             const props = (o.info && o.info.props) || {};
             const name = props['node.name'] || '';
-            const hasBlueProps = props['device.bus'] === 'bluetooth'
-                || props['api.bluez5.role']
-                || props['api.bluez5.profile']
-                || name.includes('bluez');
-            if (!hasBlueProps) continue;
-            if (!this._matchesMac(props)) continue;
+            if (!name.includes('bluez')) continue;
+            if (!this._matchesMac(props) && !this._macInName(name)) continue;
             if (!this._isHfpNode(props, name)) continue;
-            const mediaClass = props['media.class'] || '';
-            if (mediaClass === 'Audio/Sink' && !found.sinkNode) {
+            // The native-backend SCO loopback nodes encode direction in their
+            // name: bluez_output.<addr>.<n> = Audio/Sink (PC mic -> phone),
+            // bluez_input.<addr>.<n> = Audio/Source (phone voice -> PC).
+            // media.class on these loopback nodes may not be exposed as a
+            // top-level prop, so rely on the name prefix, not media.class.
+            if (!found.sinkNode && /^bluez_output\./.test(name)) {
                 found.sinkNode = name;
-            } else if (mediaClass === 'Audio/Source' && !found.sourceNode) {
+            } else if (!found.sourceNode && /^bluez_input\./.test(name)) {
                 found.sourceNode = name;
             }
+            sco.push({ props, params: (o.info && o.info.params) || [] });
         }
+        if (sco.length) this._logScoCodec(sco);
         return found;
+    }
+
+    // Logs the negotiated SCO codec/sample rate from the node props + params.
+    _logScoCodec(scoList) {
+        const codecNames = { 1: 'CVSD', 2: 'mSBC' };
+        for (const { props, params } of scoList) {
+            const codec = Number(props['api.bluez5.codec']);
+            const name = props['node.name'] || '?';
+            const bits = [];
+            if (codec) bits.push(`codec=${codecNames[codec] || codec}`);
+            // pw-dump exposes params either as a list of {key,value} or as an
+            // object keyed by param name — handle both.
+            const entries = Array.isArray(params) ? params : Object.keys(params || {}).map((k) => ({ key: k, value: params[k] }));
+            const allRates = new Set();
+            for (const prm of entries) {
+                if (!/format/i.test(prm.key || '')) continue;
+                const val = prm.value;
+                const walk = (v) => {
+                    if (!v || typeof v !== 'object') return;
+                    if (Array.isArray(v)) { v.forEach(walk); return; }
+                    if ('rate' in v) {
+                        const rates = Array.isArray(v.rate) ? v.rate : [v.rate];
+                        rates.forEach((r) => allRates.add(String(r)));
+                    }
+                    Object.values(v).forEach(walk);
+                };
+                walk(val);
+            }
+            if (allRates.size) bits.push(`rate=${[...allRates].join(',')}`);
+            console.log(`[AudioBridge] SCO node ${name}${bits.length ? ' (' + bits.join(', ') + ')' : ''}`);
+        }
     }
 
     // Default output/input as node names, never pointing back at the phone.
@@ -127,8 +193,10 @@ class AudioBridge extends EventEmitter {
         const defSource = (await this._exec('pactl', ['get-default-source'])).out.trim();
         const isBlue = (n) => n && n.toLowerCase().includes('bluez');
 
+        // Prefer the user-selected PC microphone; fall back to the default source.
+        let source = this.micSource || defSource || null;
+        if (isBlue(source)) source = null;
         let sink = isBlue(defSink) ? null : defSink || null;
-        let source = isBlue(defSource) ? null : defSource || null;
 
         if (!sink || !source) {
             const nodes = await this._pwNodes();
@@ -189,12 +257,14 @@ class AudioBridge extends EventEmitter {
         return true;
     }
 
-    async _findHfpProfile() {
+    // All profiles available on the bluez card as { name, description }.
+    async _cardProfiles() {
         const res = await this._exec('pactl', ['list', 'cards']);
-        if (!res.ok) return null;
+        if (!res.ok) return [];
         const card = await this._findBlueCard();
-        if (!card) return null;
+        if (!card) return [];
         const lines = res.out.split('\n');
+        const profiles = [];
         let inCard = false;
         for (const raw of lines) {
             const t = raw.replace(/^\s*/, '');
@@ -204,10 +274,30 @@ class AudioBridge extends EventEmitter {
                 continue;
             }
             if (!inCard) continue;
-            const m = t.match(/^([\w.-]*headset-head-unit[\w.-]*):/);
-            if (m) return m[1];
+            const m = t.match(/^([\w.-]+):\s*(.*)$/);
+            if (m && !/^(Name|Driver|Owner|Active Profile|Properties|Part|Port|Flags|Description):/i.test(t)) {
+                profiles.push({ name: m[1], description: m[2] || '' });
+            }
         }
-        return null;
+        return profiles;
+    }
+
+    // Picks the best HFP-capable profile that actually exists on the card.
+    // Preference order: wideband (mSBC) over narrowband (CVSD), then the
+    // Hands-Free role over the Audio Gateway role. The old code hardcoded a
+    // fallback of 'headset-head-unit', which does not exist on cards that only
+    // expose an 'audio-gateway' profile (silent no-op every call).
+    async _findHfpProfile() {
+        const profiles = await this._cardProfiles();
+        const hfp = profiles.filter((p) => /headset-head-unit|audio-gateway|headset-head-unit-msbc|audio-gateway-msbc/.test(p.name));
+        if (!hfp.length) return null;
+        const rank = (p) => {
+            const wide = /msbc|wideband|headset-head-unit$|headset-head-unit-msbc$|audio-gateway-msbc$/.test(p.name) ? 0 : 1;
+            const hf = /headset-head-unit/.test(p.name) ? 0 : 1;
+            return wide * 2 + hf;
+        };
+        hfp.sort((a, b) => rank(a) - rank(b));
+        return hfp[0].name;
     }
 
     // Best-effort: make sure the phone is connected over Bluetooth (HFP
@@ -239,12 +329,15 @@ class AudioBridge extends EventEmitter {
             return { linked: false, reason: 'no default PC audio nodes' };
         }
 
-        // phone voice -> PC speakers, PC mic -> phone
+        // phone voice -> PC speakers, PC mic -> phone. WirePlumber often
+        // auto-links these same ports already ("File exists"), which is fine.
+        const ok = (r) => r.ok || /File exists/i.test(r.err || '');
         const r1 = await this._exec('pw-link', [sourceNode, sink], { timeout: 5000 });
         const r2 = await this._exec('pw-link', [source, sinkNode], { timeout: 5000 });
 
-        if (r1.ok && r2.ok) {
+        if (ok(r1) && ok(r2)) {
             this._linkPair = { fromPhone: [sourceNode, sink], toPhone: [source, sinkNode] };
+            this._lastMicSource = source;
             console.log(`[AudioBridge] Routed: ${sourceNode} -> ${sink} and ${source} -> ${sinkNode}`);
             return { linked: true };
         }
@@ -289,8 +382,14 @@ class AudioBridge extends EventEmitter {
         this._clearTimers();
         if (this._linkPair) this._unlink();
 
-        const profile = (await this._findHfpProfile()) || 'headset-head-unit';
-        await this._setCardProfile(profile);
+        const profile = await this._findHfpProfile();
+        if (profile) {
+            await this._setCardProfile(profile);
+        } else {
+            // Leave the current profile untouched: forcing a hardcoded profile
+            // that does not exist on this card silently broke routing setup.
+            console.warn('[AudioBridge] No HFP-capable profile found on the bluez card; leaving profile as-is');
+        }
 
         const attempt = async (depth) => {
             if (!this.isAudioRoutingActive) return;
@@ -365,6 +464,81 @@ class AudioBridge extends EventEmitter {
 
         this.emit('micMuteStateChanged', { muted: this.isMicMuted });
         return this.isMicMuted;
+    }
+
+    // Lists real PC microphone inputs (non-monitor, non-Bluetooth) for the UI.
+    async listPcMicrophones() {
+        if (!this._linux) return [];
+        const res = await this._exec('pactl', ['list', 'sources']);
+        if (!res.ok) return [];
+        const out = [];
+        const lines = res.out.split('\n');
+        let name = null;
+        let desc = null;
+        let monitor = false;
+        for (const raw of lines) {
+            const t = raw.replace(/^\s*/, '');
+            const nameM = t.match(/^Name:\s*(\S+)$/);
+            const descM = t.match(/^Description:\s*(.+)$/);
+            if (nameM) {
+                if (name && !monitor && !name.toLowerCase().includes('bluez')) {
+                    out.push({ name, description: desc || name });
+                }
+                name = nameM[1];
+                desc = null;
+                monitor = name.includes('.monitor');
+            } else if (descM) {
+                desc = descM[1].trim();
+            }
+        }
+        if (name && !monitor && !name.toLowerCase().includes('bluez')) {
+            out.push({ name, description: desc || name });
+        }
+        return out;
+    }
+
+    // The PC input that will be (or is being) routed to the phone.
+    async _resolvedMic() {
+        if (this.micSource) return this.micSource;
+        if (this._lastMicSource) return this._lastMicSource;
+        const res = await this._exec('pactl', ['get-default-source']);
+        const src = res.out.trim();
+        return src && !src.toLowerCase().includes('bluez') ? src : null;
+    }
+
+    setMicrophoneSource(name) {
+        const next = name ? String(name) : null;
+        this.micSource = next;
+        this._lastMicSource = next;
+        console.log(`[AudioBridge] PC microphone for call routing: ${next || '(default)'}`);
+        // If a call is already being routed, immediately re-route to the new mic.
+        if (this.isAudioRoutingActive && this._linux) {
+            this._route().catch((e) => console.warn('[AudioBridge] re-route error:', e.message));
+        }
+        return this.micSource;
+    }
+
+    getMicrophoneSource() {
+        return this.micSource || null;
+    }
+
+    async setMicrophoneGain(percent) {
+        if (!this._linux) return null;
+        const pct = Math.max(0, Math.min(200, Number(percent) || 100));
+        const mic = await this._resolvedMic();
+        if (!mic) return null;
+        this._exec('pactl', ['set-source-volume', mic, `${Math.round(pct)}%`]).catch(() => {});
+        console.log(`[AudioBridge] PC microphone gain set to ${Math.round(pct)}% on ${mic}`);
+        return pct;
+    }
+
+    async getMicrophoneGain() {
+        if (!this._linux) return null;
+        const mic = await this._resolvedMic();
+        if (!mic) return null;
+        const res = await this._exec('pactl', ['get-source-volume', mic]);
+        const m = res.out.match(/(\d+)%/);
+        return m ? parseInt(m[1], 10) : 100;
     }
 
     transferCallAudioToPhone() {

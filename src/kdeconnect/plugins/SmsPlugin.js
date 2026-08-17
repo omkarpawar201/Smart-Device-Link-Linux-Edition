@@ -1,10 +1,15 @@
 const BasePlugin = require('./BasePlugin');
+const { app } = require('electron');
+const path = require('path');
+const fs = require('fs');
 
 class SmsPlugin extends BasePlugin {
     constructor(eventEmitter) {
         super('SmsPlugin');
         this.emitter = eventEmitter;
         this.threads = new Map(); // thread_id -> { threadId, contactName, address, lastMessage, messages: [] }
+        this.cacheFile = path.join(app.getPath('userData'), 'sms-cache.json');
+        this.loadCache();
     }
 
     getCapabilities() {
@@ -71,6 +76,7 @@ class SmsPlugin extends BasePlugin {
                 if (this.emitter) {
                     this.emitter.emit('smsThreadsUpdated', this.getThreadsList());
                 }
+                this.saveCache();
             }
         } else if (packet.type === 'kdeconnect.notification') {
             const body = packet.body || {};
@@ -122,6 +128,7 @@ class SmsPlugin extends BasePlugin {
                 if (this.emitter) {
                     this.emitter.emit('smsThreadsUpdated', this.getThreadsList());
                 }
+                this.saveCache();
             }
         }
     }
@@ -169,6 +176,7 @@ class SmsPlugin extends BasePlugin {
         if (this.emitter) {
             this.emitter.emit('smsThreadsUpdated', this.getThreadsList());
         }
+        this.saveCache();
 
         console.log(`[SmsPlugin] Sending SMS to ${phoneNumber} via ${device.info.name}: "${messageText}"`);
         return device.sendPacket(smsPacket);
@@ -208,6 +216,28 @@ class SmsPlugin extends BasePlugin {
 
         console.log(`[SmsPlugin] Requesting full thread history for thread ${numericThreadId} from ${device.info.name}`);
         return device.sendPacket(requestPacket);
+    }
+
+    saveCache() {
+        try {
+            const data = JSON.stringify(Array.from(this.threads.entries()));
+            fs.writeFileSync(this.cacheFile, data, 'utf8');
+        } catch (e) {
+            console.error('[SmsPlugin] Failed to save SMS cache:', e.message);
+        }
+    }
+
+    loadCache() {
+        try {
+            if (fs.existsSync(this.cacheFile)) {
+                const data = fs.readFileSync(this.cacheFile, 'utf8');
+                const entries = JSON.parse(data);
+                this.threads = new Map(entries);
+                console.log(`[SmsPlugin] Loaded ${this.threads.size} threads from persistent cache.`);
+            }
+        } catch (e) {
+            console.warn('[SmsPlugin] Failed to load SMS cache:', e.message);
+        }
     }
 
     getThreadsList() {

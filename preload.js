@@ -108,6 +108,7 @@ contextBridge.exposeInMainWorld('api', {
     send: (channel, data) => {
         const validChannels = [
             'send-reply',
+            'send-notification-action',
             'dismiss-notification',
             'clear-all-notifications',
             'send-clipboard',
@@ -135,6 +136,8 @@ contextBridge.exposeInMainWorld('api', {
             'hangup-call-audio',
             'toggle-mute-audio',
             'transfer-call-audio',
+            'audio:set-mic-source',
+            'audio:set-mic-gain',
             'phone-link:connect',
             'phone-link:disconnect',
             'phone-link:ping',
@@ -176,7 +179,11 @@ contextBridge.exposeInMainWorld('api', {
             'webcam:uninstall-driver',
             'webcam:status',
             'webcam:snapshot',
-            'webcam:toggle-camera'
+            'webcam:toggle-camera',
+            'audio:list-mic-sources',
+            'audio:get-mic-state',
+            'get-settings',
+            'save-settings'
         ];
         if (validChannels.includes(channel)) {
             return ipcRenderer.invoke(channel, data);

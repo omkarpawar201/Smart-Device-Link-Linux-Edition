@@ -63,7 +63,16 @@ def _unwrap_fd(fd):
 
 
 def _relay(raw_fd, device_path):
-    _status("ACCEPTED")
+    mac = ""
+    if device_path:
+        parts = str(device_path).split("/")
+        for p in parts:
+            if p.startswith("dev_"):
+                mac = p[4:].replace("_", ":").upper()
+    if mac:
+        _status("ACCEPTED " + mac)
+    else:
+        _status("ACCEPTED")
     peer = ""
     try:
         peer = str(device_path or "")

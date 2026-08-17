@@ -1,12 +1,19 @@
 const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, protocol } = require('electron');
 const path = require('path');
+
+app.name = 'diy-phone-link';
+if (process.platform === 'linux') {
+    app.desktopFileName = 'diy-phone-link.desktop';
+}
+
 const { initKDEConnectBridge, setMainWindow } = require('./src/ipc/bridge');
 
 let mainWindow = null;
 let tray = null;
 let bridgeInitialized = false;
 
-const isDev = process.env.NODE_ENV !== 'production';
+// const isDev = process.env.NODE_ENV !== 'production';
+const isDev = !app.isPackaged;
 
 // Privileged schemes for serving phone photo thumbnails/previews and the live
 // webcam preview frame to the renderer. Must be registered before app ready.
@@ -25,6 +32,7 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1200,
         height: 800,
+        icon: path.join(__dirname, 'build', 'icon.png'),
         minWidth: 900,
         minHeight: 600,
         frame: false, // Custom acrylic frameless window
@@ -73,6 +81,14 @@ function createWindow() {
         console.error('[main] did-fail-load:', code, desc);
     });
 
+    // Prevent window from killing the app; hide it to tray instead
+    mainWindow.on('close', (event) => {
+        if (!app.isQuitting) {
+            event.preventDefault();
+            mainWindow.hide();
+        }
+    });
+
     // Handle window closed
     mainWindow.on('closed', () => {
         mainWindow = null;
@@ -80,13 +96,23 @@ function createWindow() {
             setMainWindow(null);
         }
     });
+
 }
 
 function createTray() {
     // Create simple native tray icon
-    const icon = nativeImage.createFromDataURL(
-        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAuSURBVHgB7cxBDQAACAIg2f6VzWALjHwN0JJyCYgISQiJCEkIiQhJCIkISQgJ8wc2lQYRT1A2WwAAAABJRU5ErkJggg=='
-    );
+    const iconPath = path.join(__dirname, 'build', 'icon.png');
+    let icon = nativeImage.createFromPath(iconPath);
+
+    if (icon.isEmpty()) {
+        // Fallback placeholder if icon is not found
+        icon = nativeImage.createFromDataURL(
+            'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAuSURBVHgB7cxBDQAACAIg2f6VzWALjHwN0JJyCYgISQiJCEkIiQhJCIkISQgJ8wc2lQYRT1A2WwAAAABJRU5ErkJggg=='
+        );
+    } else {
+        icon = icon.resize({ width: 18, height: 18 });
+    }
+
 
     tray = new Tray(icon);
     const contextMenu = Menu.buildFromTemplate([
@@ -97,6 +123,7 @@ function createTray() {
             click: () => {
                 if (mainWindow) {
                     if (mainWindow.isMinimized()) mainWindow.restore();
+                    mainWindow.show(); // <-- ADD THIS LINE
                     mainWindow.focus();
                 } else {
                     createWindow();
@@ -123,6 +150,7 @@ function createTray() {
     tray.on('double-click', () => {
         if (mainWindow) {
             if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show(); // <-- ADD THIS LINE
             mainWindow.focus();
         }
     });
